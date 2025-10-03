@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Memory / Pairs — Browser Version</title>
+  <style>
+    :root{
+      --card-back: #1a1a40;
+      --card-front: #ffffff;
+      --accent: #3d2b27;
+      --text: #222;
+      --menu-bg: rgba(255,255,255,0.85);
+      --menu-text: #000;
+    }
+
+    *{box-sizing:border-box;}
+    body{
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      margin:0;
+      min-height:100vh;
+      color:var(--text);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background: url('Background.png') no-repeat center center fixed;
+      background-size: cover;
+    }
+
+    .app{width:100%; max-width:980px; padding:20px;}
+
+    header{display:flex; align-items:center; justify-content:space-between; margin-bottom:16px}
+    header h1{
+      font-size:26px;
+      margin:0;
+      color: #F4EFE7;
+    }
+
+    .menu{
+      display:flex;
+      gap:16px;
+      align-items:center;
+      justify-content:space-between;
+      background: var(--menu-bg);
+      color: var(--menu-text);
+      padding: 24px;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+      font-size: 20px; /* увеличенный размер текста */
+      flex-wrap:wrap;
+    }
+
+    .menu label{font-size:20px; margin-right:8px;}
+    .menu select{font-size:18px; padding:6px 10px; border-radius:6px;}
+
+    .menu .controls{display:flex; gap:12px; align-items:center;}
+
+    .btn{
+      background:var(--accent); 
+      color:white; 
+      border:none; 
+      padding:12px 18px; 
+      border-radius:10px; 
+      cursor:pointer; 
+      transition:0.2s; 
+      font-size:16px;
+    }
+    .btn:hover{opacity:0.9;}
+    .btn.ghost{
+      background:transparent; 
+      color: #3d2b27; 
+      border:2px solid #3d2b27;
+    }
+    .btn:disabled{opacity:.6; cursor:not-allowed;}
+
+    .hud{display:flex; gap:16px; align-items:center; font-size:18px;}
+    .hud .tile{background:white; padding:8px 14px; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.06);}
+
+    .board{margin-top:20px; display:grid; gap:14px; justify-items:center; align-items:center;}
+    .board.grid-12{grid-template-columns:repeat(4, 1fr);}
+    .board.grid-18{grid-template-columns:repeat(6, 1fr);}
+    .board.grid-24{grid-template-columns:repeat(6, 1fr);}
+
+    /* Enlarged cards */
+    .card{width:100%; aspect-ratio: 1/1; max-width:150px; perspective: 1000px; cursor:pointer; position:relative;}
+    .card-inner{position:absolute; inset:0; transition: transform .45s; transform-style: preserve-3d;}
+    .card.flipped .card-inner{transform: rotateY(180deg);}
+    .card-face{position:absolute; inset:0; backface-visibility: hidden; border-radius:10px; display:flex; align-items:center; justify-content:center; font-weight:700;}
+    .card-back{background:var(--card-back); color:white; background-image:url('back.png'); background-size:cover; background-position:center;}
+    .card-front{background:var(--card-front); color:var(--text); transform: rotateY(180deg); border:2px solid rgba(0,0,0,.08); background-size:cover; background-position:center;}
+
+    .modal-mask{position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center;}
+    .modal{background:white; padding:28px; border-radius:12px; min-width:300px; text-align:center;}
+    .modal.show{display:flex;}
+    .small{font-size:14px; color:#666;}
+
+    @media (max-width:700px){
+      .board.grid-18, .board.grid-24{grid-template-columns:repeat(4,1fr);}
+      .card{max-width:110px;}
+      .menu{flex-direction:column; font-size:18px;}
+      .menu label{font-size:18px;}
+      .menu select{font-size:16px;}
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Memory — Pairs</h1>
+      <div class="hud">
+        <div class="tile">Time: <span id="timer">02:00</span></div>
+        <div class="tile">Tries: <span id="tries">0</span></div>
+      </div>
+    </header>
+
+    <div id="menu" class="menu">
+      <div>
+        <label class="small">Select difficulty:</label>
+        <select id="difficulty">
+          <option value="12">Easy — 12 cards</option>
+          <option value="18">Medium — 18 cards</option>
+          <option value="24">Hard — 24 cards</option>
+        </select>
+      </div>
+      <div class="controls">
+        <button id="startBtn" class="btn">Start</button>
+      </div>
+    </div>
+
+    <main>
+      <div id="board" class="board grid-12" aria-live="polite"></div>
+    </main>
+
+    <div id="modalMask" class="modal-mask">
+      <div id="modal" class="modal">
+        <h2 id="modalTitle">Title</h2>
+        <p id="modalText">Text</p>
+        <div style="display:flex; gap:8px; justify-content:center; margin-top:12px">
+          <button id="restartBtn" class="btn ghost">Restart</button>
+          <button id="menuBtn" class="btn ghost">Back to Menu</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const TOTAL_TIME_SECONDS = 120;
+    const boardEl = document.getElementById('board');
+    const timerEl = document.getElementById('timer');
+    const triesEl = document.getElementById('tries');
+    const startBtn = document.getElementById('startBtn');
+    const difficultySelect = document.getElementById('difficulty');
+    const modalMask = document.getElementById('modalMask');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalText = document.getElementById('modalText');
+    const restartBtn = document.getElementById('restartBtn');
+    const menuBtn = document.getElementById('menuBtn');
+    const menu = document.getElementById('menu');
+
+    let selectedCards = [];
+    let matchedCount = 0;
+    let tries = 0;
+    let timer = null;
+    let timeLeft = TOTAL_TIME_SECONDS;
+    let gameRunning = false;
+    let currentDifficulty = 12;
+    let lockBoard = false;
+
+    function formatTime(sec){
+      const m = Math.floor(sec/60).toString().padStart(2,'0');
+      const s = (sec%60).toString().padStart(2,'0');
+      return `${m}:${s}`;
+    }
+
+    function shuffle(arr){
+      for(let i=arr.length-1;i>0;i--){
+        const j=Math.floor(Math.random()*(i+1));
+        [arr[i],arr[j]]=[arr[j],arr[i]];
+      }
+      return arr;
+    }
+
+    function createPairs(countTiles){
+      const pairs = countTiles/2;
+      const cards = [];
+      for(let i=1;i<=pairs;i++){
+        cards.push({id:i, img:`img${i}.png`});
+        cards.push({id:i, img:`img${i}.png`});
+      }
+      return shuffle(cards);
+    }
+
+    function buildBoard(tileCount){
+      boardEl.innerHTML = '';
+      boardEl.classList.remove('grid-12','grid-18','grid-24');
+      if(tileCount===12) boardEl.classList.add('grid-12');
+      if(tileCount===18) boardEl.classList.add('grid-18');
+      if(tileCount===24) boardEl.classList.add('grid-24');
+
+      const cards = createPairs(tileCount);
+      cards.forEach((cardData)=>{
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.dataset.pairId = cardData.id;
+        card.innerHTML = `
+          <div class="card-inner">
+            <div class="card-face card-front" style="background-image:url('${cardData.img}')"></div>
+            <div class="card-face card-back"></div>
+          </div>`;
+        card.addEventListener('click', onCardClick);
+        boardEl.appendChild(card);
+      });
+    }
+
+    function startTimer(){
+      clearInterval(timer);
+      timeLeft = TOTAL_TIME_SECONDS;
+      timerEl.textContent = formatTime(timeLeft);
+      timer = setInterval(()=>{
+        timeLeft--;
+        timerEl.textContent = formatTime(timeLeft);
+        if(timeLeft<=0){
+          clearInterval(timer);
+          endGame(false);
+        }
+      },1000);
+    }
+    function stopTimer(){clearInterval(timer);}
+
+    function onCardClick(e){
+      if(!gameRunning || lockBoard) return;
+      const card = e.currentTarget;
+      if(card.classList.contains('flipped')) return;
+      flipCard(card);
+      selectedCards.push(card);
+
+      if(selectedCards.length===2){
+        tries++;
+        triesEl.textContent = tries;
+        const [a,b] = selectedCards;
+        if(a.dataset.pairId === b.dataset.pairId){
+          a.removeEventListener('click', onCardClick);
+          b.removeEventListener('click', onCardClick);
+          matchedCount += 2;
+          selectedCards = [];
+          if(matchedCount >= currentDifficulty){endGame(true);}
+        } else {
+          lockBoard = true;
+          setTimeout(()=>{
+            unflipCard(a);
+            unflipCard(b);
+            selectedCards = [];
+            lockBoard = false;
+          }, 900);
+        }
+      }
+    }
+
+    function flipCard(card){card.classList.add('flipped');}
+    function unflipCard(card){card.classList.remove('flipped');}
+
+    function startGame(tileCount){
+      currentDifficulty = tileCount;
+      matchedCount = 0;
+      tries = 0;
+      triesEl.textContent = tries;
+      selectedCards = [];
+      lockBoard = false;
+      gameRunning = true;
+      buildBoard(tileCount);
+      startTimer();
+      menu.style.display = 'none';
+    }
+
+    function endGame(win){
+      gameRunning = false;
+      stopTimer();
+      if(win){
+        modalTitle.textContent = 'Congratulations!';
+        modalText.textContent = `You matched all pairs in ${formatTime(TOTAL_TIME_SECONDS - timeLeft)} and ${tries} tries.`;
+      } else {
+        modalTitle.textContent = 'Time\'s up';
+        modalText.textContent = 'Try again.';
+      }
+      modalMask.style.display = 'flex';
+    }
+
+    function restartLevel(){modalMask.style.display = 'none';startGame(currentDifficulty);}
+    function backToMenu(){
+      modalMask.style.display = 'none';
+      stopTimer();
+      gameRunning = false;
+      boardEl.innerHTML = '';
+      menu.style.display = 'flex';
+      timerEl.textContent = formatTime(TOTAL_TIME_SECONDS);
+      triesEl.textContent = '0';
+    }
+
+    startBtn.addEventListener('click', ()=>{
+      const val = parseInt(difficultySelect.value,10);
+      startGame(val);
+      timerEl.textContent = formatTime(TOTAL_TIME_SECONDS);
+    });
+    restartBtn.addEventListener('click', ()=>{restartLevel();});
+    menuBtn.addEventListener('click', ()=>{backToMenu();});
+
+    document.addEventListener('keydown', (e)=>{
+      if(e.key.toLowerCase()==='r'){
+        if(gameRunning){startGame(currentDifficulty);}
+      }
+    });
+
+    (function init(){timerEl.textContent = formatTime(TOTAL_TIME_SECONDS);})();
+  </script>
+</body>
+</html>
